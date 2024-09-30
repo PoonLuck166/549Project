@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Signal Detection Game</title>
+    <style>
+        /* CSS styles */
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f0f0f0;
+            margin: 0;
+        }
+
+        .container {
+            text-align: center;
+        }
+
+        #display-area {
+            width: 800px;
+            height: 600px;
+            border: 2px solid #000;
+            margin: 20px auto;
+            position: relative;
+            background-color: #fff;
+        }
+
+        .element {
+            position: absolute;
+        }
+
+        #response-buttons {
+            margin: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+        }
+
+        #result, #feedback, #trial-count {
+            margin: 20px;
+            font-size: 18px;
+        }
+
+        #timer {
+            font-size: 18px;
+            margin: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Signal Detection Game</h1>
+        <p id="instructions">Look for the target: <span id="target"></span></p>
+        <p id="trial-count"></p>
+
+        <!-- Difficulty Selection -->
+        <label for="difficulty">Select Difficulty:</label>
+        <select id="difficulty">
+            <option value="easy">Easy</option>
+            <option value="medium">Medium</option>
+            <option value="hard">Hard</option>
+        </select>
+
+        <div id="display-area"></div>
+        <div id="response-buttons">
+            <button id="yes-button" onclick="recordResponse(true, false)" disabled>Yes</button>
+            <button id="no-button" onclick="recordResponse(false, false)" disabled>No</button>
+        </div>
+        <div id="feedback"></div>
+        <div id="result"></div>
+        <button id="start-button" onclick="startGame()">Start Game</button>
+        <p id="timer"></p>
+    </div>
+    <script>
+        // JavaScript code
+        const shapes = ['circle', 'square', 'triangle'];
+        const words = ['Circle', 'Square', 'Triangle', 'Red', 'Blue', 'Green', 'Yellow'];
+        const colors = ['red', 'blue', 'green', 'yellow'];
+        const minDistance = 80; // Minimum distance between elements
+
+        let target;
+        let targetType; // To specify if the target is a shape or word
+        let currentTrial = 0;
+        let totalTrials = 10;
+        let responses = [];
+        let timer;
+        let targetPresent = false;
+        let startTime; // To track response time
+        let correctPositives = 0;
+        let falsePositives = 0;
+        let correctNegatives = 0;
+        let falseNegatives = 0;
+        let noAnswers = 0; // Count of 'no answer' responses
+        let totalResponseTime = 0;
+
+        function startGame() {
+            currentTrial = 0;
+            responses = [];
+            correctPositives = 0;
+            falsePositives = 0;
+            correctNegatives = 0;
+            falseNegatives = 0;
+            noAnswers = 0; // Reset no answers count
+            totalResponseTime = 0;
+            document.getElementById('start-button').disabled = true;
+            document.getElementById('yes-button').disabled = false;
+            document.getElementById('no-button').disabled = false;
+            document.getElementById('feedback').innerText = ''; // Clear previous feedback
+            document.getElementById('trial-count').innerText = ''; // Clear previous trial count
+            startTrialWithDelay(); // Start with the first trial after a delay
+        }
+
+        function getRandomTarget() {
+            const targetOptions = [...shapes, ...words];
+            target = targetOptions[Math.floor(Math.random() * targetOptions.length)];
+
+            // Determine if the target is a shape or a word
+            if (shapes.includes(target)) {
+                targetType = 'Shape';
+            } else {
+                targetType = 'Word';
+            }
+
+            document.getElementById('target').innerText = `${targetType}: ${target}`;
+            return target;
+        }
+
+        function startTrialWithDelay() {
+            // Update trial count
+            document.getElementById('trial-count').innerText = `Trial ${currentTrial + 1}/${totalTrials}`;
+
+            document.getElementById('display-area').innerHTML = ''; // Clear the view
+            let countdown = 1;
+            document.getElementById('timer').innerText = `Get ready! ${countdown}`;
+            document.getElementById('feedback').innerText = ''; // Clear previous feedback
+
+            getRandomTarget(); // Get a new random target for the trial
+
+            const countdownInterval = setInterval(() => {
+                countdown--;
+                if (countdown > 0) {
+                    document.getElementById('timer').innerText = `Get ready! ${countdown}`;
+                } else {
+                    clearInterval(countdownInterval);
+                    showRandomObjects();
+                }
+            }, 1000);
+        }
+
+        function showRandomObjects() {
+            if (currentTrial >= totalTrials) {
+                endGame();
+                return;
+            }
+
+            currentTrial++;
+            const displayArea = document.getElementById('display-area');
+            displayArea.innerHTML = '';
+            const elementsPositions = []; // Track element positions to enforce distance
+
+            // Set targetPresent for this trial
+            targetPresent = Math.random() < 0.5; // Randomly decide if the target is present
+
+            // Get difficulty and set number of elements
+            const difficulty = document.getElementById('difficulty').value;
+            let numberOfElements;
+            if (difficulty === 'easy') {
+                numberOfElements = Math.floor(Math.random() * 5) + 15; // 5 to 10 elements
+            } else if (difficulty === 'medium') {
+                numberOfElements = Math.floor(Math.random() * 5) + 25; // 15 to 25 elements
+            } else if (difficulty === 'hard') {
+                numberOfElements = Math.floor(Math.random() * 5) + 35; // 30 to 50 elements
+            }
+
+            // Add random non-target elements
+            for (let i = 0; i < numberOfElements; i++) {
+                let elementType = Math.floor(Math.random() * 2);
+                let element;
+                let elementValue;
+                let position;
+
+                do {
+                    if (elementType === 0) {
+                        element = createShape();
+                        elementValue = element.getAttribute('data-shape');
+                    } else {
+                        element = createWordOrColor();
+                        elementValue = element.innerText;
+                    }
+
+                    // Generate random position until it's far enough from other elements
+                    do {
+                        position = {
+                            left: Math.random() * (displayArea.clientWidth - 100),
+                            top: Math.random() * (displayArea.clientHeight - 100),
+                        };
+                    } while (!isPositionValid(position, elementsPositions));
+
+                } while (elementValue === target); // Ensure non-target elements do not match the target
+
+                // Set position
+                element.style.left = `${position.left}px`;
+                element.style.top = `${position.top}px`;
+                elementsPositions.push(position); // Track the new element's position
+
+                displayArea.appendChild(element);
+            }
+
+            // Add target element if present and render it last
+            if (targetPresent) {
+                const targetElement = targetType === 'Shape' ? createShape(target) : createTextElement(target);
+                let position;
+
+                // Generate random position until it's far enough from other elements
+                do {
+                    position = {
+                        left: Math.random() * (displayArea.clientWidth - 100),
+                        top: Math.random() * (displayArea.clientHeight - 100),
+                    };
+                } while (!isPositionValid(position, elementsPositions));
+
+                // Set position
+                targetElement.style.left = `${position.left}px`;
+                targetElement.style.top = `${position.top}px`;
+                elementsPositions.push(position); // Track the target element's position
+
+                displayArea.appendChild(targetElement);
+            }
+
+            startTime = Date.now(); // Start timing
+            startTimer();
+        }
+
+        // Check if the generated position is at least `minDistance` away from other elements
+        function isPositionValid(newPosition, existingPositions) {
+            for (const pos of existingPositions) {
+                const distance = Math.sqrt(
+                    Math.pow(newPosition.left - pos.left, 2) + Math.pow(newPosition.top - pos.top, 2)
+                );
+                if (distance < minDistance) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        function createShape(specificShape = null) {
+            const shapeType = specificShape || shapes[Math.floor(Math.random() * shapes.length)];
+            const color = getRandomColor();
+            const size = Math.floor(Math.random() * 20) + 50;
+
+            const shape = document.createElement('div');
+            shape.className = 'element';
+            shape.setAttribute('data-shape', shapeType); // Use data attribute to identify the shape type
+            shape.style.backgroundColor = color;
+            shape.style.width = `${size}px`;
+            shape.style.height = `${size}px`;
+
+            if (shapeType === 'circle') {
+                shape.style.borderRadius = '50%';
+            } else if (shapeType === 'triangle') {
+                shape.style.width = '0';
+                shape.style.height = '0';
+                shape.style.borderLeft = `${size / 2}px solid transparent`;
+                shape.style.borderRight = `${size / 2}px solid transparent`;
+                shape.style.borderBottom = `${size}px solid ${color}`;
+                shape.style.backgroundColor = 'transparent';
+            }
+
+            return shape;
+        }
+
+        function createTextElement(text) {
+            const color = getRandomColor();
+            const size = Math.floor(Math.random() * 20) + 30;
+
+            const textElement = document.createElement('div');
+            textElement.className = 'element';
+            textElement.style.color = color;
+            textElement.style.fontSize = `${size}px`;
+            textElement.innerText = text;
+
+            return textElement;
+        }
+
+        function createWordOrColor() {
+            let word;
+            do {
+                word = words[Math.floor(Math.random() * words.length)];
+            } while (word === target); // Direct comparison to avoid matching target
+            return createTextElement(word);
+        }
+
+        function getRandomColor() {
+            const shade = Math.floor(Math.random() * 256);
+            return `rgb(${Math.floor(Math.random() * 256)}, ${Math.floor(Math.random() * 256)}, ${shade})`;
+        }
+
+        function recordResponse(response, noAnswer = false) {
+            clearTimeout(timer);
+            const responseTime = Date.now() - startTime;
+            totalResponseTime += responseTime;
+
+            let correct = false;
+
+            if (noAnswer) {
+                noAnswers++; // Increment no answers count
+            } else if (response && targetPresent) {
+                correctPositives++;
+                correct = true;
+            } else if (!response && !targetPresent) {
+                correctNegatives++;
+                correct = true;
+            } else if (response && !targetPresent) {
+                falsePositives++;
+            } else if (!response && targetPresent) {
+                falseNegatives++;
+            }
+
+            // If it was the correct response, add to responses
+            responses.push(correct);
+
+            document.getElementById('feedback').innerText = correct ? `Your answer was correct! (Response Time: ${responseTime} ms)` : `Your answer was wrong! (Response Time: ${responseTime} ms)`;
+
+            // If it’s the last trial, directly show results without delay
+            if (currentTrial >= totalTrials) {
+                setTimeout(endGame, 1000);
+            } else {
+                setTimeout(startTrialWithDelay, 1000); // Start next trial after a short delay to show feedback
+            }
+        }
+
+        function startTimer() {
+            let timeLeft = 5; // 5-second timer for each trial
+            document.getElementById('timer').innerText = `Time left: ${timeLeft} s`;
+
+            timer = setInterval(() => {
+                timeLeft--;
+                document.getElementById('timer').innerText = `Time left: ${timeLeft} s`;
+                if (timeLeft <= 0) {
+                    clearInterval(timer);
+                    recordNoAnswer(); // Automatically record "No Answer" if time runs out
+                }
+            }, 1000);
+        }
+
+        function recordNoAnswer() {
+            recordResponse(false, true); // Call recordResponse with 'noAnswer' set to true
+        }
+
+        function endGame() {
+            let correctCount = responses.filter(res => res).length;
+            let averageResponseTime = (totalResponseTime / totalTrials).toFixed(2);
+            document.getElementById('result').innerText = `Game over! You got ${correctCount} out of ${totalTrials} correct.
+                \nCorrect Positives: ${correctPositives}
+                \nFalse Positives: ${falsePositives}
+                \nCorrect Negatives: ${correctNegatives}
+                \nFalse Negatives: ${falseNegatives}
+                \nNo Answers: ${noAnswers}
+                \nAverage Response Time: ${averageResponseTime} ms`;
+            document.getElementById('start-button').disabled = false;
+            document.getElementById('yes-button').disabled = true;
+            document.getElementById('no-button').disabled = true;
+            document.getElementById('timer').innerText = '';
+        }
+    </script>
+</body>
+</html>
